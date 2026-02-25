@@ -15,6 +15,10 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 /* ─── Azure Speech Endpoint ─── */
+app.get("/health", (req, res) => {
+  res.send("Server alive");
+});
+
 app.post("/speak", (req, res) => {
 
   const text = req.body?.text;

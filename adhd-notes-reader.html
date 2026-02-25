@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FocusRead Revision</title>
+
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #f4efe8;
+  padding: 30px;
+  max-width: 800px;
+  margin: auto;
+  color: #2d3a32;
+}
+
+h1 { text-align: center; }
+
+textarea {
+  width: 100%;
+  min-height: 180px;
+  padding: 15px;
+  font-size: 16px;
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  margin-bottom: 20px;
+  line-height: 1.6;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 15px;
+  align-items: center;
+}
+
+button {
+  padding: 10px 18px;
+  border-radius: 25px;
+  border: none;
+  background: #7a9e87;
+  color: white;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #ccc;
+  color: #333;
+}
+
+.status {
+  margin: 15px 0;
+  font-size: 14px;
+  color: #666;
+}
+
+.chunk {
+  padding: 12px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: white;
+  border: 1px solid #ddd;
+  opacity: 0.5;
+}
+
+.chunk.active {
+  opacity: 1;
+  border: 2px solid #7a9e87;
+}
+
+.chunk.done {
+  background: #eef5f1;
+}
+</style>
+</head>
+
+<body>
+
+<h1>FocusRead Revision</h1>
+
+<textarea id="notes" placeholder="Paste lesson notes here..."></textarea>
+
+<div class="controls">
+  <label>Speed:
+    <input type="range" id="speed" min="0.6" max="1.2" step="0.1" value="0.9">
+  </label>
+
+  <select id="chunk-size">
+    <option value="sentence">One sentence</option>
+    <option value="short" selected>2–3 sentences</option>
+    <option value="paragraph">Full paragraph</option>
+  </select>
+
+  <button type="button" onclick="startReading()">Start</button>
+  <button type="button" class="secondary" onclick="togglePause()">Pause</button>
+  <button type="button" class="secondary" onclick="resetReader()">Reset</button>
+</div>
+
+<div class="controls">
+  <button type="button" onclick="downloadFullAudio()">Download Full Audio</button>
+</div>
+
+<div class="status" id="status">Ready when you are.</div>
+
+<div id="chunk-list"></div>
+
+<script>
+
+let chunks = [];
+let currentIndex = 0;
+let isReading = false;
+
+/* ─── CHUNKING ─── */
+function chunkText(text) {
+  const mode = document.getElementById("chunk-size").value;
+  text = text.trim();
+
+  if (mode === "sentence") {
+    return text.match(/[^.!?]+[.!?]+["']?|[^.!?]+$/g) || [text];
+  }
+
+  if (mode === "short") {
+    const sentences = text.match(/[^.!?]+[.!?]+["']?|[^.!?]+$/g) || [text];
+    const grouped = [];
+    for (let i = 0; i < sentences.length; i += 2) {
+      grouped.push(sentences.slice(i, i + 2).join(" "));
+    }
+    return grouped;
+  }
+
+  return text.split(/\n{2,}/);
+}
+
+/* ─── BROWSER PREVIEW ─── */
+function speak(text) {
+  return new Promise(resolve => {
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = parseFloat(document.getElementById("speed").value);
+    utter.onend = resolve;
+    speechSynthesis.speak(utter);
+  });
+}
+
+async function startReading() {
+  const text = document.getElementById("notes").value;
+  if (!text.trim()) return;
+
+  chunks = chunkText(text);
+  currentIndex = 0;
+  isReading = true;
+
+  renderChunks();
+  document.getElementById("status").textContent =
+    `Preparing ${chunks.length} sections...`;
+
+  await readNext();
+}
+
+async function readNext() {
+  if (!isReading || currentIndex >= chunks.length) {
+    document.getElementById("status").textContent = "Finished.";
+    return;
+  }
+
+  highlightChunk();
+  document.getElementById("status").textContent = "Reading preview...";
+
+  await speak(chunks[currentIndex]);
+
+  currentIndex++;
+  await readNext();
+}
+
+function togglePause() {
+  if (speechSynthesis.paused) {
+    speechSynthesis.resume();
+  } else {
+    speechSynthesis.pause();
+  }
+}
+
+function resetReader() {
+  speechSynthesis.cancel();
+  isReading = false;
+  currentIndex = 0;
+  chunks = [];
+  document.getElementById("chunk-list").innerHTML = "";
+  document.getElementById("status").textContent = "Ready when you are.";
+}
+
+/* ─── FORM DOWNLOAD ─── */
+function downloadFullAudio() {
+
+  const text = document.getElementById("notes").value;
+  if (!text.trim()) return;
+
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = "http://localhost:3000/speak";
+
+  const textarea = document.createElement("textarea");
+  textarea.name = "text";
+  textarea.value = text;
+
+  form.appendChild(textarea);
+  document.body.appendChild(form);
+  form.submit();
+}
+
+/* ─── UI HELPERS ─── */
+function renderChunks() {
+  const list = document.getElementById("chunk-list");
+  list.innerHTML = "";
+
+  chunks.forEach((c, i) => {
+    const div = document.createElement("div");
+    div.className = "chunk";
+    div.id = "chunk-" + i;
+    div.textContent = c;
+    list.appendChild(div);
+  });
+}
+
+function highlightChunk() {
+  chunks.forEach((_, i) => {
+    const el = document.getElementById("chunk-" + i);
+    if (!el) return;
+
+    el.className = "chunk " +
+      (i < currentIndex ? "done" :
+       i === currentIndex ? "active" : "");
+  });
+}
+
+</script>
+</body>
+</html>
